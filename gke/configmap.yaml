@@ -9,6 +9,9 @@ data:
   DATA_CHECK_ON_ORDER: "true"
   OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
   DEPLOYMENT_ENVIRONMENT: gke
+  # Stable OTel semconv: http.server.request.duration and db.system.name/db.query.text.
+  OTEL_SEMCONV_STABILITY_OPT_IN: http,database
+  GCP_PROJECT_ID: crafty-dynamics-239114
   GCP_DB_PORT: "5432"
   AWS_DB_PORT: "5432"
   GCP_DB_SSL_MODE: require

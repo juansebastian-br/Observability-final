@@ -1,4 +1,5 @@
-# Snippet for Istio mesh config (apply using istioctl install; see guide)
+# Only for self-managed Istio (istioctl install). Not used with managed Cloud Service Mesh
+# (TRAFFIC_DIRECTOR): there, tracing uses the built-in `stackdriver` provider in istio-telemetry.yaml.
 meshConfig:
   extensionProviders:
     - name: otel-tracing

@@ -15,9 +15,39 @@ data:
     processors:
       memory_limiter:
         check_interval: 5s
-        limit_mib: 180
-        spike_limit_mib: 40
-      batch: {}
+        limit_mib: 400
+        spike_limit_mib: 100
+      # Pod/namespace/container attributes so Google Cloud maps telemetry to k8s_container.
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        pod_association:
+          - sources: [{from: connection}]
+          - sources: [{from: resource_attribute, name: k8s.pod.ip}]
+        extract:
+          metadata: [k8s.namespace.name, k8s.pod.name, k8s.deployment.name, k8s.node.name, container.id]
+      resourcedetection:
+        detectors: [gcp]
+        timeout: 5s
+        override: false
+      # k8s.container.name matches the Deployment name in this lab (one app container per pod).
+      transform/container:
+        error_mode: ignore
+        trace_statements:
+          - context: resource
+            statements:
+              - set(attributes["k8s.container.name"], attributes["service.name"]) where attributes["k8s.container.name"] == nil
+        metric_statements:
+          - context: resource
+            statements:
+              - set(attributes["k8s.container.name"], attributes["service.name"]) where attributes["k8s.container.name"] == nil
+        log_statements:
+          - context: resource
+            statements:
+              - set(attributes["k8s.container.name"], attributes["service.name"]) where attributes["k8s.container.name"] == nil
+      batch:
+        send_batch_size: 512
+        timeout: 5s
     exporters:
       otlp/jaeger:
         endpoint: jaeger:4317
@@ -25,22 +55,57 @@ data:
           insecure: true
       prometheus:
         endpoint: 0.0.0.0:8889
+      # Cloud Monitoring (workload.googleapis.com/*), Cloud Trace and Cloud Logging.
+      # Credentials: Workload Identity for KSA observability-lab/otel-collector.
+      googlecloud:
+        project: ${env:GCP_PROJECT_ID}
+        metric:
+          prefix: workload.googleapis.com
+        log:
+          default_log_name: observability-lab
       debug:
         verbosity: basic
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
     service:
+      extensions: [health_check]
       pipelines:
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, batch]
-          exporters: [otlp/jaeger]
+          processors: [memory_limiter, k8sattributes, resourcedetection, transform/container, batch]
+          exporters: [otlp/jaeger, googlecloud]
         metrics:
           receivers: [otlp]
-          processors: [memory_limiter, batch]
-          exporters: [prometheus]
+          processors: [memory_limiter, k8sattributes, resourcedetection, transform/container, batch]
+          exporters: [prometheus, googlecloud]
         logs:
           receivers: [otlp]
-          processors: [memory_limiter, batch]
-          exporters: [debug]
+          processors: [memory_limiter, k8sattributes, resourcedetection, transform/container, batch]
+          exporters: [googlecloud]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: observability-lab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: observability-lab-otel-collector}
+rules:
+  - apiGroups: ['']
+    resources: [pods, namespaces, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: observability-lab-otel-collector}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: observability-lab-otel-collector}
+subjects: [{kind: ServiceAccount, name: otel-collector, namespace: observability-lab}]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -54,15 +119,26 @@ spec:
   template:
     metadata:
       labels: {app: otel-collector}
+      # Outside the mesh: k8sattributes needs the real client pod IP (a sidecar would show 127.0.0.6).
+      annotations: {sidecar.istio.io/inject: "false"}
     spec:
+      serviceAccountName: otel-collector
       containers:
         - name: otel-collector
-          image: otel/opentelemetry-collector-contrib:0.113.0
+          image: otel/opentelemetry-collector-contrib:0.161.0
           args: ["--config=/etc/otel/config.yaml"]
-          ports: [{containerPort: 4317}, {containerPort: 4318}, {containerPort: 8889}]
+          env:
+            - name: GCP_PROJECT_ID
+              valueFrom:
+                configMapKeyRef: {name: lab-config, key: GCP_PROJECT_ID}
+          ports: [{containerPort: 4317}, {containerPort: 4318}, {containerPort: 8889}, {containerPort: 13133}]
+          readinessProbe:
+            httpGet: {path: /, port: 13133}
+            initialDelaySeconds: 5
+            periodSeconds: 10
           resources:
-            requests: {cpu: 100m, memory: 128Mi}
-            limits: {cpu: 500m, memory: 256Mi}
+            requests: {cpu: 200m, memory: 256Mi}
+            limits: {cpu: 500m, memory: 512Mi}
           volumeMounts: [{name: config, mountPath: /etc/otel}]
       volumes: [{name: config, configMap: {name: otel-collector-config}}]
 ---

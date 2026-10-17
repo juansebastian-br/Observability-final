@@ -1,13 +1,17 @@
-apiVersion: telemetry.istio.io/v1
+# Cloud Service Mesh (managed, TRAFFIC_DIRECTOR) supports only the tracing/access-log subset of the
+# Telemetry API. Envoy HTTP L7 metrics go to Cloud Monitoring automatically (istio.io/service/*).
+# Single namespace-wide Telemetry: do not add another one without a selector.
+# Managed CSM (asm 1.20) only serves telemetry.istio.io/v1alpha1.
+apiVersion: telemetry.istio.io/v1alpha1
 kind: Telemetry
 metadata:
   name: mesh-l7
   namespace: observability-lab
 spec:
-  metrics:
-    - providers:
-        - name: prometheus
   tracing:
     - providers:
-        - name: otel-tracing
+        - name: stackdriver
       randomSamplingPercentage: 100.0
+  accessLogging:
+    - providers:
+        - name: stackdriver
