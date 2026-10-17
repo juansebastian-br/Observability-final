@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-service
+  namespace: observability-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payments-service
+  template:
+    metadata:
+      labels:
+        app: payments-service
+    spec:
+      containers:
+      - name: payments-service
+        image: REPLACE_IMAGE_PAYMENTS
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8001
+        envFrom:
+        - configMapRef:
+            name: lab-config
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: payments-service
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: app-db-url
+              key: DATABASE_URL
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-service
+  namespace: observability-lab
+spec:
+  selector:
+    app: payments-service
+  ports:
+  - name: http
+    port: 8001
+    targetPort: 8001

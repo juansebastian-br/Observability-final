@@ -1,0 +1,21 @@
+# Requires Istio installed and a mesh-enabled namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability-lab
+  labels:
+    istio-injection: enabled
+---
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: mesh-observability
+  namespace: observability-lab
+spec:
+  accessLogging:
+  - providers:
+    - name: envoy
+  tracing:
+  - providers:
+    - name: otel-tracing
+    randomSamplingPercentage: 100.0

@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-service
+  namespace: observability-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-service
+  template:
+    metadata:
+      labels:
+        app: data-service
+    spec:
+      containers:
+      - name: data-service
+        image: REPLACE_IMAGE_DATA
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8002
+        envFrom:
+        - configMapRef:
+            name: lab-config
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: data-service
+        - name: GCP_DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: cloud-db-auth
+              key: GCP_DB_HOST
+        - name: GCP_DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: cloud-db-auth
+              key: GCP_DB_USER
+        - name: GCP_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cloud-db-auth
+              key: GCP_DB_PASSWORD
+        - name: GCP_DB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: cloud-db-auth
+              key: GCP_DB_DATABASE
+        - name: AWS_DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: cloud-db-auth
+              key: AWS_DB_HOST
+        - name: AWS_DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: cloud-db-auth
+              key: AWS_DB_USER
+        - name: AWS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cloud-db-auth
+              key: AWS_DB_PASSWORD
+        - name: AWS_DB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: cloud-db-auth
+              key: AWS_DB_DATABASE
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-service
+  namespace: observability-lab
+spec:
+  selector:
+    app: data-service
+  ports:
+  - name: http
+    port: 8002
+    targetPort: 8002

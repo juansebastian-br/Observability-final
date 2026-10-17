@@ -1,0 +1,7 @@
+# Snippet for Istio mesh config (apply using istioctl install; see guide)
+meshConfig:
+  extensionProviders:
+    - name: otel-tracing
+      opentelemetry:
+        service: otel-collector.observability-lab.svc.cluster.local
+        port: 4317

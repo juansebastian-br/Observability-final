@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-service
+  namespace: observability-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-service
+  template:
+    metadata:
+      labels:
+        app: orders-service
+    spec:
+      containers:
+      - name: orders-service
+        image: REPLACE_IMAGE_ORDERS
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: lab-config
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: orders-service
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: app-db-url
+              key: DATABASE_URL
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-service
+  namespace: observability-lab
+spec:
+  selector:
+    app: orders-service
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000

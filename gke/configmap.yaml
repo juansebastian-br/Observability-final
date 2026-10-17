@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-config
+  namespace: observability-lab
+data:
+  PAYMENTS_URL: http://payments-service:8001
+  DATA_URL: http://data-service:8002
+  DATA_CHECK_ON_ORDER: "true"
+  OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+  DEPLOYMENT_ENVIRONMENT: gke
+  GCP_DB_PORT: "5432"
+  AWS_DB_PORT: "5432"
+  GCP_DB_SSL_MODE: require
+  AWS_DB_SSL_MODE: require
