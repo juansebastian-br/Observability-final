@@ -40,7 +40,7 @@ filtrado por `service_name = data-service`, namespace `observability-lab`, exclu
 |---|---|
 | `r` | error ratio por minuto: `count(status 5xx) / count(all)` con `align delta(1m)` |
 | `error_rate` | `sum(errors)/sum(total)` en ventana deslizante de `evaluation_window` (5m) |
-| `baseline`, `σ` | `mean(r)`, `stddev(r)` en `baseline_window` (30m), **desplazado `time_shift 5m`** para que la anomalía no contamine su propio baseline |
+| `baseline`, `σ` | `mean(r)`, `stddev(r)` en `baseline_window` (30m) **desplazado `baseline_offset` (15m)**: ventana `[t−45m, t−15m]`. Una caída de hasta 15 min no entra en su propio baseline (si entrara, σ crecería con la anomalía y el incidente se cerraría y reabriría a mitad de la caída). Solo minutos con ≥ `baseline_min_requests` (10) requests: ratios como 1/2 o 2/3 con tráfico bajo inflan σ |
 | umbral dinámico | `max(baseline + k·σ, error_rate_floor)` — el piso (5%) evita disparar con 1 error cuando σ≈0 |
 | `latency_p99` | `percentile_from(aggregate(distribución), 99)` en 5m |
 | condición | `error_rate > umbral && latency_p99 > 1.5 's' && requests >= 10`, sostenida `condition_duration` (60s) |
@@ -99,7 +99,8 @@ Cambiar el destinatario = editar la propiedad y `terraform apply`; los módulos 
 |---|---|---|
 | `latency_slo_seconds` | `1.5` | SLO_threshold de p99 |
 | `sigma_multiplier` | `2` | k de baseline + k·σ |
-| `baseline_window` / `evaluation_window` | `30m` / `5m` | ventanas del baseline y de la señal actual |
+| `baseline_window` / `baseline_offset` / `evaluation_window` | `30m` / `15m` / `5m` | ventana y desplazamiento del baseline; ventana de la señal actual |
+| `baseline_min_requests` | `10` | minutos con menos requests no entran al baseline |
 | `error_rate_floor` | `0.05` | piso del umbral dinámico |
 | `min_requests` | `10` | volumen mínimo para evaluar |
 | `static_error_rate_threshold` | `0.01` | umbral de la política estática de comparación |

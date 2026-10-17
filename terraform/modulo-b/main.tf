@@ -61,6 +61,8 @@ module "data_service_anomaly" {
   latency_slo_seconds            = var.latency_slo_seconds
   sigma_multiplier               = var.sigma_multiplier
   baseline_window                = var.baseline_window
+  baseline_offset                = var.baseline_offset
+  baseline_min_requests          = var.baseline_min_requests
   evaluation_window              = var.evaluation_window
   error_rate_floor               = var.error_rate_floor
   min_requests                   = var.min_requests

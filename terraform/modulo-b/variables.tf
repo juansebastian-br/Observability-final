@@ -55,8 +55,20 @@ variable "baseline_window" {
   default     = "30m"
 }
 
+variable "baseline_offset" {
+  description = "Desplazamiento del baseline hacia el pasado. Una caída más corta que este valor no contamina su propio baseline (si no, σ crece y el incidente se cierra a mitad de la caída)."
+  type        = string
+  default     = "15m"
+}
+
+variable "baseline_min_requests" {
+  description = "Minutos con menos requests que esto no entran al baseline (ratios con pocos requests inflan σ)."
+  type        = number
+  default     = 10
+}
+
 variable "evaluation_window" {
-  description = "Ventana de la señal actual (error rate y p99). El baseline se desplaza esta misma duración para no incluir la señal actual."
+  description = "Ventana de la señal actual (error rate y p99)."
   type        = string
   default     = "5m"
 }

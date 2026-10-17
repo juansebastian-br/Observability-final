@@ -23,6 +23,7 @@ output "enrichment" {
     topic        = module.alert_enrichment[0].topic_id
     function     = module.alert_enrichment[0].function_name
     log_name     = module.alert_enrichment[0].log_name
+    ledger_log   = module.alert_enrichment[0].ledger_log_name
     log_explorer = module.alert_enrichment[0].log_explorer_url
   } : null
 }

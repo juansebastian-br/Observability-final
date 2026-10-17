@@ -8,6 +8,7 @@ data "google_project" "this" {
 
 locals {
   log_name         = "aiops-alert-enrichment"
+  ledger_log_name  = "aiops-incident-ledger"
   monitoring_agent = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-monitoring-notification.iam.gserviceaccount.com"
   pubsub_agent     = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
   log_filter       = "logName=\"projects/${var.project_id}/logs/${local.log_name}\" AND jsonPayload.incident_state=\"open\""
@@ -140,6 +141,7 @@ resource "google_cloudfunctions2_function" "enricher" {
       NAMESPACE           = var.namespace
       SERVICE_NAME        = var.service_name
       ENRICHMENT_LOG_NAME = local.log_name
+      LEDGER_LOG_NAME     = local.ledger_log_name
       LOOKBACK_SECONDS    = tostring(var.lookback_seconds)
       MAX_TRACES          = tostring(var.max_traces)
     }
@@ -206,6 +208,7 @@ resource "google_monitoring_alert_policy" "enriched" {
     EOT
   }
 
-  notification_channels = var.notification_channel_ids
+  # Also to Pub/Sub so the ledger records it; the function never enriches detector=enriched.
+  notification_channels = concat(var.notification_channel_ids, [google_monitoring_notification_channel.pubsub.id])
   user_labels           = merge(var.user_labels, { detector = "enriched", mode = "active" })
 }

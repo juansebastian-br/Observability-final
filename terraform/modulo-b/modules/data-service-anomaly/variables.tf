@@ -7,6 +7,8 @@ variable "excluded_routes" { type = list(string) }
 variable "latency_slo_seconds" { type = number }
 variable "sigma_multiplier" { type = number }
 variable "baseline_window" { type = string }
+variable "baseline_offset" { type = string }
+variable "baseline_min_requests" { type = number }
 variable "evaluation_window" { type = string }
 variable "error_rate_floor" { type = number }
 variable "min_requests" { type = number }
@@ -21,7 +23,7 @@ variable "notification_channel_ids" {
 }
 
 variable "enrichment_channel_ids" {
-  description = "Canal Pub/Sub del enriquecedor; solo lo usa la política correlacionada."
+  description = "Canal Pub/Sub de automatización (ledger de incidentes + enriquecimiento); se adjunta a todas las políticas."
   type        = list(string)
   default     = []
 }

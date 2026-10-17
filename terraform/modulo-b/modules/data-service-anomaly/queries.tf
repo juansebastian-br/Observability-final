@@ -26,14 +26,20 @@ locals {
   EOT
 
   # Current error rate (evaluation window) vs dynamic threshold max(baseline + k·σ, floor).
-  # The baseline is time-shifted by the evaluation window so the anomaly never feeds its own baseline.
+  # Baseline = mean/σ of the per-minute ratio over [t - offset - window, t - offset]:
+  # - time_shift(baseline_offset) keeps an ongoing outage (up to the offset) out of its own baseline,
+  #   otherwise σ grows with the anomaly and the incident closes mid-outage and re-opens (noise);
+  # - minutes with fewer than baseline_min_requests are dropped (ratios of 1/2 or 2/3 blow up σ).
   error_signals = <<-EOT
     ${local.error_counts}
     | {
         group_by sliding(${var.evaluation_window}), [error_rate: sum(errors) / sum(total), requests: sum(total)]
+        | every 1m
         ;
-        group_by sliding(${var.baseline_window}), [baseline: mean(r), sigma: stddev(r)]
-        | time_shift ${var.evaluation_window}
+        filter total >= ${var.baseline_min_requests}
+        | group_by sliding(${var.baseline_window}), [baseline: mean(r), sigma: stddev(r)]
+        | time_shift ${var.baseline_offset}
+        | every 1m
       }
     | join
     | value [error_rate, requests,
@@ -43,6 +49,7 @@ locals {
   latency_p99 = <<-EOT
     ${local.base}
     | group_by [], sliding(${var.evaluation_window}), [d: aggregate(val())]
+    | every 1m
     | value [latency_p99: percentile_from(d, 99)]
   EOT
 
@@ -53,7 +60,8 @@ locals {
         value [latency_p99]
         ;
         group_by sliding(${var.baseline_window}), [p_mean: mean(latency_p99), p_sigma: stddev(latency_p99)]
-        | time_shift ${var.evaluation_window}
+        | time_shift ${var.baseline_offset}
+        | every 1m
       }
     | join
     | value [latency_p99, latency_threshold: p_mean + ${local.k} * p_sigma]
@@ -90,6 +98,7 @@ locals {
   q_static_error = <<-EOT
     ${local.error_counts}
     | group_by sliding(${var.evaluation_window}), [error_rate: sum(errors) / sum(total), requests: sum(total)]
+    | every 1m
     | condition error_rate > ${var.static_error_rate_threshold} && requests >= ${var.min_requests}
   EOT
 

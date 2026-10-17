@@ -21,3 +21,7 @@ output "enriched_policy_name" {
 output "log_explorer_url" {
   value = "https://console.cloud.google.com/logs/query;query=${urlencode(local.log_filter)}?project=${var.project_id}"
 }
+
+output "ledger_log_name" {
+  value = local.ledger_log_name
+}

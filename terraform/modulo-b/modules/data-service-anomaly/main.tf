@@ -1,4 +1,8 @@
 locals {
+  # Percentages for display: 0.01 * 100 is 0.999... in floating point.
+  floor_pct  = format("%.4g", local.floor * 100)
+  static_pct = format("%.4g", var.static_error_rate_threshold * 100)
+
   logs_filter = join("\n", [
     "resource.type=\"k8s_container\"",
     "resource.labels.namespace_name=\"${var.namespace}\"",
@@ -8,7 +12,7 @@ locals {
   logs_url   = "https://console.cloud.google.com/logs/query;query=${urlencode(local.logs_filter)};duration=PT1H?project=${var.project_id}"
   traces_url = "https://console.cloud.google.com/traces/explorer?project=${var.project_id}"
 
-  rule_text = "error_rate(${var.evaluation_window}) > max(baseline_${var.baseline_window} + ${local.k}σ, ${local.floor * 100}%) AND latency_p99(${var.evaluation_window}) > ${local.slo}s AND requests >= ${var.min_requests}"
+  rule_text = "error_rate(${var.evaluation_window}) > max(baseline_${var.baseline_window}[offset ${var.baseline_offset}] + ${local.k}σ, ${local.floor_pct}%) AND latency_p99(${var.evaluation_window}) > ${local.slo}s AND requests >= ${var.min_requests}"
 
   # Single-signal detectors: shadow (no channels) unless explicitly enabled.
   single_signal_channels = var.notify_single_signal_anomalies ? var.notification_channel_ids : []
@@ -20,7 +24,7 @@ locals {
       severity     = "CRITICAL"
       mode         = "active"
       query        = local.q_correlated
-      channels     = concat(var.notification_channel_ids, var.enrichment_channel_ids)
+      channels     = var.notification_channel_ids
       doc          = <<-EOT
         ## AIOps · ${var.service_name}: degradación correlacionada
 
@@ -49,7 +53,7 @@ locals {
       mode         = var.notify_single_signal_anomalies ? "active" : "shadow"
       query        = local.q_anomaly_error
       channels     = local.single_signal_channels
-      doc          = "Detector de anomalía (una sola señal) del error rate de ${var.service_name}: `error_rate(${var.evaluation_window}) > max(baseline_${var.baseline_window} + ${local.k}σ, ${local.floor * 100}%)`. Modo shadow: registra incidentes para comparar ruido, no notifica."
+      doc          = "Detector de anomalía (una sola señal) del error rate de ${var.service_name}: `error_rate(${var.evaluation_window}) > max(baseline_${var.baseline_window} + ${local.k}σ, ${local.floor_pct}%)`. Modo shadow: registra incidentes para comparar ruido, no notifica."
     }
 
     anomaly-latency = {
@@ -63,8 +67,8 @@ locals {
     }
 
     static-error = {
-      display_name = "[Modulo B][Shadow][Estática] ${var.service_name}: error rate > ${var.static_error_rate_threshold * 100}%"
-      condition    = "error_rate > ${var.static_error_rate_threshold * 100}% (umbral fijo)"
+      display_name = "[Modulo B][Shadow][Estática] ${var.service_name}: error rate > ${local.static_pct}%"
+      condition    = "error_rate > ${local.static_pct}% (umbral fijo)"
       severity     = "WARNING"
       mode         = "shadow"
       query        = local.q_static_error
@@ -115,7 +119,8 @@ resource "google_monitoring_alert_policy" "this" {
     content   = each.value.doc
   }
 
-  notification_channels = each.value.channels
+  # Every policy (shadow included) also publishes to the automation channel: incident ledger + enrichment.
+  notification_channels = concat(each.value.channels, var.enrichment_channel_ids)
 
   # Labels let Phase 3 count incidents per detector (static vs anomaly vs correlated).
   user_labels = merge(var.user_labels, {
@@ -134,7 +139,7 @@ locals {
 
   dashboard_tiles = [
     {
-      title = "Error rate (${var.evaluation_window}) vs umbral dinámico max(baseline+${local.k}σ, ${local.floor * 100}%)"
+      title = "Error rate (${var.evaluation_window}) vs umbral dinámico max(baseline+${local.k}σ, ${local.floor_pct}%)"
       sets = [
         { name = "error_rate", query = "${local.error_signals}| value [error_rate]" },
         { name = "umbral dinámico", query = "${local.error_signals}| value [error_threshold]" },

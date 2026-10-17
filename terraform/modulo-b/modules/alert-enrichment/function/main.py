@@ -1,8 +1,10 @@
-"""AIOps alert enricher.
+"""AIOps alert enricher and incident ledger.
 
-Triggered by the Cloud Monitoring Pub/Sub channel of the correlated data-service policy. For each
-opened incident it finds the trace_id of the failed request(s) and writes a structured log entry
-that a log-based alert turns into the enriched notification.
+Triggered by the Cloud Monitoring Pub/Sub channel attached to every Módulo B policy.
+- Ledger: every open/close is written to the `aiops-incident-ledger` log (noise measurement).
+- Enrichment: for incidents opened by the correlated policy it finds the trace_id of the failed
+  request(s) and writes a structured log entry that a log-based alert turns into the enriched
+  notification.
 
 Trace lookup order:
 1. ERROR logs of the service in the incident window (OTel logs carry the active trace context).
@@ -23,6 +25,7 @@ PROJECT_ID = os.environ["PROJECT_ID"]
 NAMESPACE = os.getenv("NAMESPACE", "observability-lab")
 SERVICE_NAME = os.getenv("SERVICE_NAME", "data-service")
 LOG_NAME = os.getenv("ENRICHMENT_LOG_NAME", "aiops-alert-enrichment")
+LEDGER_LOG_NAME = os.getenv("LEDGER_LOG_NAME", "aiops-incident-ledger")
 LOOKBACK_SECONDS = int(os.getenv("LOOKBACK_SECONDS", "600"))
 MAX_TRACES = int(os.getenv("MAX_TRACES", "3"))
 
@@ -71,14 +74,51 @@ def slowest_traces(start, end):
     return [t["traceId"] for t in response.json().get("traces", [])]
 
 
+def detector_of(incident):
+    """Detector/mode from the policy user labels set by Terraform (detector=correlated|static-error|...)."""
+    labels = incident.get("policy_user_labels") or {}
+    if "detector" in labels:
+        return labels["detector"], labels.get("mode", "unknown")
+    name = (incident.get("policy_name") or "").lower()
+    for marker, detector in (("enriquecida", "enriched"), ("correlación", "correlated"),
+                             ("estática", "static"), ("anomalía", "anomaly")):
+        if marker in name:
+            return detector, "unknown"
+    return "unknown", "unknown"
+
+
+def record_in_ledger(incident, state, detector, mode):
+    """Incident ledger: one entry per open/close of every Módulo B policy (active and shadow)."""
+    logging_client.logger(LEDGER_LOG_NAME).log_struct(
+        {
+            "message": f"[AIOps ledger] {detector} {state}: {incident.get('policy_name')}",
+            "incident_id": incident.get("incident_id"),
+            "incident_state": state,
+            "detector": detector,
+            "mode": mode,
+            "policy_name": incident.get("policy_name"),
+            "condition_name": incident.get("condition_name"),
+            "started_at": incident.get("started_at"),
+            "ended_at": incident.get("ended_at"),
+            "observed_value": incident.get("observed_value"),
+            "service": SERVICE_NAME,
+        },
+        severity="INFO",
+        labels={"module": "modulo-b", "detector": detector, "mode": mode},
+    )
+
+
 @functions_framework.cloud_event
 def enrich(cloud_event):
     message = json.loads(base64.b64decode(cloud_event.data["message"]["data"]))
     incident = message.get("incident", {})
     state = incident.get("state", "unknown")
-    if state != "open":
-        print(json.dumps({"message": "incident not open, skipped", "state": state,
-                          "incident_id": incident.get("incident_id")}))
+    detector, mode = detector_of(incident)
+    record_in_ledger(incident, state, detector, mode)
+
+    # Only the correlated policy is enriched. The enriched policy also publishes here: enriching it
+    # would loop (enrichment log -> enriched alert -> enrichment log ...).
+    if state != "open" or detector != "correlated":
         return
 
     end = int(time.time())
