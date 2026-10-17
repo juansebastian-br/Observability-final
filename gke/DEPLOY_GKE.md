@@ -27,31 +27,47 @@ gcloud artifacts repositories create "$REPO" --repository-format=docker --locati
 gcloud auth configure-docker "$REGION-docker.pkg.dev"
 ```
 
-## 2. Instalar Istio (perfil demo para laboratorio)
+## 2. Service mesh: Cloud Service Mesh gestionado (despliegue actual)
 
-Instala `istioctl` de la documentación oficial correspondiente a una versión soportada por tu GKE. El perfil demo incluye ingress gateway. `--set` configura un proveedor OpenTelemetry para trazas de Envoy; el collector debe estar desplegado antes de generar tráfico.
+El clúster `otel-lab` (Autopilot, proyecto `crafty-dynamics-239114`) usa Cloud Service Mesh gestionado con implementación `TRAFFIC_DIRECTOR` (fleet `MANAGEMENT_AUTOMATIC`). En esa implementación:
+
+- La API `Telemetry` solo admite `telemetry.istio.io/v1alpha1` y el subconjunto de trazas/access logs; el proveedor es `stackdriver` (Cloud Trace / Cloud Logging), no `otel-tracing`.
+- Las métricas L7 HTTP de Envoy se publican solas en Cloud Monitoring (`istio.io/service/server/request_count`, `.../response_latencies`).
+- La inyección de sidecars depende de la etiqueta `istio-injection=enabled` del namespace (`gke/namespace.yaml`). Si un `kubectl apply` del namespace la elimina, los pods nuevos quedan fuera del mesh.
 
 ```bash
-istioctl install --set profile=demo \
-  --set 'meshConfig.extensionProviders[0].name=otel-tracing' \
-  --set 'meshConfig.extensionProviders[0].opentelemetry.service=otel-collector.observability-lab.svc.cluster.local' \
-  --set 'meshConfig.extensionProviders[0].opentelemetry.port=4317' -y
+gcloud container fleet mesh describe --project "$PROJECT_ID"   # REVISION_READY / ACTIVE
 kubectl apply -f gke/namespace.yaml
 ```
 
-**Atención:** si Istio ya existe, no lo reinstales a ciegas; integra el proveedor de trazas en su configuración existente.
+`gke/istio-provider.yaml` solo sirve para Istio autogestionado (`istioctl install`); no aplica a Cloud Service Mesh gestionado.
+
+## 2b. Workload Identity del collector
+
+El collector exporta a Cloud Monitoring, Cloud Trace y Cloud Logging con la KSA `observability-lab/otel-collector` (creada en `gke/collector-config.yaml`):
+
+```bash
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+M="principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$PROJECT_ID.svc.id.goog/subject/ns/observability-lab/sa/otel-collector"
+for r in roles/monitoring.metricWriter roles/cloudtrace.agent roles/logging.logWriter; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="$M" --role="$r" --condition=None
+done
+```
+
+Ajusta `GCP_PROJECT_ID` en `gke/configmap.yaml` si cambias de proyecto.
 
 ## 3. Crear Secrets SIN subirlos al repositorio
 
-`cloud-db-auth` almacena credenciales de ambos PostgreSQL; usa el nombre de host/IP alcanzable **desde GKE**. `app-db-url` es la base efímera interna de órdenes y pagos. Evita guardar los secretos en historial o archivos compartidos: el siguiente ejemplo es didáctico, usa `read -s` en la terminal.
+`cloud-db-auth` almacena credenciales de ambos PostgreSQL; usa el nombre de host/IP alcanzable **desde GKE**. `app-db-url` es la base efímera interna de órdenes y pagos y **debe usar el mismo usuario, base y contraseña** que `local-postgres-auth` + `postgres-secret` (si no, orders/payments fallan con `fe_sendauth: no password supplied`). Evita guardar los secretos en historial o archivos compartidos: el siguiente ejemplo es didáctico, usa `read -s` en la terminal.
 
 ```bash
 kubectl -n observability-lab create secret generic local-postgres-auth \
-  --from-literal=POSTGRES_USER=otel \
-  --from-literal=POSTGRES_PASSWORD='CAMBIAR_PASSWORD_LOCAL' \
-  --from-literal=POSTGRES_DB=observability
+  --from-literal=POSTGRES_USER=postgres \
+  --from-literal=POSTGRES_DB=postgres
+kubectl -n observability-lab create secret generic postgres-secret \
+  --from-literal=POSTGRES_PASSWORD='CAMBIAR_PASSWORD_LOCAL'
 kubectl -n observability-lab create secret generic app-db-url \
-  --from-literal=DATABASE_URL='postgresql+psycopg://otel:CAMBIAR_PASSWORD_LOCAL@postgres:5432/observability'
+  --from-literal=DATABASE_URL='postgresql+psycopg://postgres:CAMBIAR_PASSWORD_LOCAL@postgres:5432/postgres'
 # Sustituye los ocho valores con tus datos (sin compartir contraseñas):
 kubectl -n observability-lab create secret generic cloud-db-auth \
   --from-literal=GCP_DB_HOST='IP_O_DNS_CLOUD_SQL' \
