@@ -1,0 +1,58 @@
+# Módulo B - load/chaos Job. Applied by scripts/modulo-b/run-chaos.sh (creates the ConfigMap with the script).
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: modulo-b-loadgen, namespace: observability-lab}
+---
+# Least privilege: only NetworkPolicies in this namespace (to block/unblock RDS egress).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: modulo-b-loadgen, namespace: observability-lab}
+rules:
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: modulo-b-loadgen, namespace: observability-lab}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: modulo-b-loadgen}
+subjects: [{kind: ServiceAccount, name: modulo-b-loadgen, namespace: observability-lab}]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: modulo-b-chaos
+  namespace: observability-lab
+  labels: {module: modulo-b}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app: modulo-b-loadgen, module: modulo-b}
+      annotations:
+        # Outside the mesh: a sidecar would keep the Job from completing, and the client does not need L7.
+        sidecar.istio.io/inject: "false"
+        # Autopilot consolidates nodes and evicted the first 84-min run after 17 min.
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      serviceAccountName: modulo-b-loadgen
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: loadgen
+          image: python:3.12-slim
+          command: ["python", "-u", "/app/chaos_loadgen.py"]
+          env:
+            - name: RDS_HOST
+              valueFrom: {secretKeyRef: {name: cloud-db-auth, key: AWS_DB_HOST}}
+            - name: PHASES
+              valueFrom: {configMapKeyRef: {name: modulo-b-chaos, key: phases.json, optional: true}}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: 1, memory: 512Mi}
+          volumeMounts: [{name: app, mountPath: /app}]
+      volumes:
+        - name: app
+          configMap: {name: modulo-b-chaos, items: [{key: chaos_loadgen.py, path: chaos_loadgen.py}]}

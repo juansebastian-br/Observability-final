@@ -1,0 +1,24 @@
+# Copiar a terraform.tfvars (ignorado por git) y ajustar.
+project_id = "crafty-dynamics-239114"
+region     = "us-central1"
+
+latency_slo_seconds = 1.5
+
+# Canales de notificación como propiedad: agrega, quita o cambia sin tocar los módulos.
+notification_channels = {
+  oncall_email = {
+    type   = "email"
+    labels = { email_address = "tu-correo@example.com" }
+  }
+  # slack_sre = {
+  #   type   = "slack"
+  #   labels = { channel_name = "#sre-alerts" }   # el token se agrega en la consola o vía sensitive_labels
+  # }
+  # webhook = {
+  #   type   = "webhook_tokenauth"
+  #   labels = { url = "https://example.com/hooks/alerts" }
+  # }
+}
+
+# Reutilizar canales existentes en vez de crearlos:
+# existing_notification_channel_ids = ["projects/crafty-dynamics-239114/notificationChannels/1234567890"]

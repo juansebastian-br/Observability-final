@@ -1,0 +1,9 @@
+[
+  {"name": "baseline", "minutes": 17, "rps": 2},
+  {"name": "noise_load_spike", "minutes": 3, "rps": 2, "burst_workers": 48},
+  {"name": "recovery_1", "minutes": 6, "rps": 2},
+  {"name": "noise_micro_outages", "minutes": 5, "rps": 2, "block": [8, 82]},
+  {"name": "recovery_2", "minutes": 6, "rps": 2},
+  {"name": "incident_rds_outage", "minutes": 5, "rps": 2, "block": "on"},
+  {"name": "recovery_final", "minutes": 3, "rps": 2}
+]
